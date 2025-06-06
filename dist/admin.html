@@ -1337,6 +1337,14 @@
                                     <input type="checkbox" class="toggle toggle-primary toggle-sm" ${mappingData.isWechat ? 'checked' : ''}>
                                     <span class="label-text">微信</span>
                                 </label>
+                                ${mappingData.isWechat ? `
+                                <div class="form-control">
+                                    <label class="label">
+                                        <span class="label-text text-xs">更新微信二维码</span>
+                                    </label>
+                                    <input type="file" class="file-input file-input-bordered file-input-xs w-full" accept="image/*">
+                                </div>
+                                ` : ''}
                             </div>
                         `;
 
@@ -1355,6 +1363,34 @@
                         saveBtn.onclick = () => saveEdit(row);
                         cancelBtn.onclick = () => restoreRow(row);
                         qrBtn.onclick = () => generateQRForMapping(window.location.origin + '/' + originalData.path, originalData.path);
+                        
+                        // 绑定微信开关事件，动态显示/隐藏二维码上传字段
+                        const wechatToggle = cells[4].querySelectorAll('input[type="checkbox"]')[1];
+                        if (wechatToggle) {
+                            wechatToggle.addEventListener('change', function() {
+                                const statusDiv = cells[4].querySelector('div');
+                                if (this.checked) {
+                                    // 显示二维码上传字段
+                                    if (!statusDiv.querySelector('input[type="file"]')) {
+                                        const fileInputDiv = document.createElement('div');
+                                        fileInputDiv.className = 'form-control';
+                                        fileInputDiv.innerHTML = `
+                                            <label class="label">
+                                                <span class="label-text text-xs">更新微信二维码</span>
+                                            </label>
+                                            <input type="file" class="file-input file-input-bordered file-input-xs w-full" accept="image/*">
+                                        `;
+                                        statusDiv.appendChild(fileInputDiv);
+                                    }
+                                } else {
+                                    // 隐藏二维码上传字段
+                                    const fileInputDiv = statusDiv.querySelector('.form-control');
+                                    if (fileInputDiv) {
+                                        fileInputDiv.remove();
+                                    }
+                                }
+                            });
+                        }
                     } catch (error) {
                         console.error('获取数据失败:', error);
                         showAlert('获取数据失败，请重试');
@@ -1375,6 +1411,10 @@
                 const isWechatToggle = cells[4].querySelectorAll('input[type="checkbox"]')[1];
                 const newEnabled = enabledToggle.checked;
                 const newIsWechat = isWechatToggle ? isWechatToggle.checked : false;
+                
+                // 获取新上传的二维码文件（如果有）
+                const fileInput = cells[4].querySelector('input[type="file"]');
+                const hasNewQrCode = fileInput && fileInput.files && fileInput.files.length > 0;
 
                 // 检查是否有任何修改
                 const hasChanges =
@@ -1383,7 +1423,8 @@
                     newTarget !== rowOriginalData.target ||
                     newExpiry !== rowOriginalData.expiry ||
                     newEnabled !== rowOriginalData.enabled ||
-                    (isWechatToggle && newIsWechat !== rowOriginalData.isWechat);
+                    (isWechatToggle && newIsWechat !== rowOriginalData.isWechat) ||
+                    hasNewQrCode;
 
                 if (!hasChanges) {
                     restoreRow(row);
@@ -1398,6 +1439,27 @@
                     }
                     const serverData = await response.json();
 
+                    let qrCodeData = serverData.qrCodeData;
+                    
+                    // 如果上传了新的二维码文件，处理文件转换
+                    if (hasNewQrCode) {
+                        const file = fileInput.files[0];
+                        
+                        // 检查文件大小（限制为5MB）
+                        if (file.size > 5 * 1024 * 1024) {
+                            showAlert('图片文件不能超过5MB');
+                            return;
+                        }
+                        
+                        // 转换为base64
+                        qrCodeData = await new Promise((resolve, reject) => {
+                            const reader = new FileReader();
+                            reader.onload = (e) => resolve(e.target.result);
+                            reader.onerror = (e) => reject(e);
+                            reader.readAsDataURL(file);
+                        });
+                    }
+
                     // 保存更改
                     const updateResponse = await fetch('/api/mapping', {
                         method: 'PUT',
@@ -1410,7 +1472,7 @@
                             expiry: newExpiry || null,
                             enabled: newEnabled,
                             isWechat: newIsWechat,
-                            qrCodeData: serverData.qrCodeData // 使用服务器返回的原始二维码数据
+                            qrCodeData: qrCodeData // 使用新的或原有的二维码数据
                         })
                     });
 

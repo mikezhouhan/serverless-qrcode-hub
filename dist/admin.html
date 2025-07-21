@@ -374,6 +374,36 @@
 
     <div class="card bg-base-100 shadow-xl mb-8">
         <div class="card-body">
+            <h2 class="card-title text-xl mb-4">域名设置</h2>
+            <div class="alert alert-info mb-4">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="stroke-current shrink-0 w-6 h-6">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                </svg>
+                <span>设置自定义域名用于生成二维码，如不设置则使用当前部署的域名</span>
+            </div>
+            <div class="form-control">
+                <label class="label">
+                    <span class="label-text">自定义域名（可选）</span>
+                    <span class="label-text-alt text-primary cursor-pointer" id="useCurrentDomain">使用当前域名</span>
+                </label>
+                <div class="join">
+                    <input type="text" id="customDomain" placeholder="例：https://yourdomain.com 或 https://短域名.com" 
+                           class="input input-bordered join-item flex-1">
+                    <button id="saveDomainBtn" class="btn btn-primary join-item">保存设置</button>
+                    <button id="clearDomainBtn" class="btn btn-ghost join-item">清除</button>
+                </div>
+                <label class="label">
+                    <span class="label-text-alt">
+                        <span class="text-success font-medium">当前使用：</span>
+                        <span id="currentDomainDisplay" class="font-mono">-</span>
+                    </span>
+                </label>
+            </div>
+        </div>
+    </div>
+
+    <div class="card bg-base-100 shadow-xl mb-8">
+        <div class="card-body">
             <h2 class="card-title text-xl mb-4">二维码识别与短链创建</h2>
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <!-- 左侧：二维码识别区域 -->
@@ -1299,7 +1329,7 @@
                     e.preventDefault();
                     deleteMapping(path);
                 };
-                qrBtn.onclick = () => generateQRForMapping(window.location.origin + '/' + path, path);
+                qrBtn.onclick = () => generateQRForMapping(generateQRCodeURL(path), path);
 
                 row.appendChild(actionsCell);
                 return row;
@@ -1362,7 +1392,7 @@
                         const [saveBtn, cancelBtn, qrBtn] = actionsCell.querySelectorAll('button');
                         saveBtn.onclick = () => saveEdit(row);
                         cancelBtn.onclick = () => restoreRow(row);
-                        qrBtn.onclick = () => generateQRForMapping(window.location.origin + '/' + originalData.path, originalData.path);
+                        qrBtn.onclick = () => generateQRForMapping(generateQRCodeURL(originalData.path), originalData.path);
                         
                         // 绑定微信开关事件，动态显示/隐藏二维码上传字段
                         const wechatToggle = cells[4].querySelectorAll('input[type="checkbox"]')[1];
@@ -1536,7 +1566,7 @@
                 const [editBtn, deleteBtn, qrBtn] = actionsCell.querySelectorAll('button');
                 editBtn.onclick = () => toggleEditMode(row);
                 deleteBtn.onclick = () => deleteMapping(originalData.path);
-                qrBtn.onclick = () => generateQRForMapping(window.location.origin + '/' + originalData.path, originalData.path);
+                qrBtn.onclick = () => generateQRForMapping(generateQRCodeURL(originalData.path), originalData.path);
 
                 row.classList.remove('editing');
             }
@@ -1860,6 +1890,97 @@
                     qrCode.append(document.getElementById('qr-container'));
                 }
             }
+
+            // 域名设置相关函数
+            function getEffectiveDomain() {
+                const savedDomain = localStorage.getItem('customDomain');
+                if (savedDomain && savedDomain.trim()) {
+                    return savedDomain.trim();
+                }
+                return window.location.origin;
+            }
+
+            function updateCurrentDomainDisplay() {
+                const effectiveDomain = getEffectiveDomain();
+                const isCustom = localStorage.getItem('customDomain');
+                const displayElement = document.getElementById('currentDomainDisplay');
+                
+                if (isCustom && isCustom.trim()) {
+                    displayElement.textContent = effectiveDomain + ' (自定义)';
+                    displayElement.className = 'font-mono text-primary';
+                } else {
+                    displayElement.textContent = effectiveDomain + ' (部署域名)';
+                    displayElement.className = 'font-mono text-success';
+                }
+            }
+
+            function validateDomainFormat(domain) {
+                if (!domain || !domain.trim()) return true; // 空值有效，表示使用默认域名
+                
+                const trimmedDomain = domain.trim();
+                
+                // 必须以 http:// 或 https:// 开头
+                if (!trimmedDomain.startsWith('http://') && !trimmedDomain.startsWith('https://')) {
+                    return false;
+                }
+                
+                try {
+                    new URL(trimmedDomain);
+                    return true;
+                } catch {
+                    return false;
+                }
+            }
+
+            // 域名设置事件处理
+            document.getElementById('saveDomainBtn').addEventListener('click', function() {
+                const domain = document.getElementById('customDomain').value.trim();
+                
+                if (!validateDomainFormat(domain)) {
+                    showAlert('域名格式错误，请输入完整的URL格式，如: https://yourdomain.com');
+                    return;
+                }
+                
+                if (domain) {
+                    // 去除末尾的斜杠
+                    const normalizedDomain = domain.replace(/\/+$/, '');
+                    localStorage.setItem('customDomain', normalizedDomain);
+                    showAlert('自定义域名设置成功', 'success');
+                } else {
+                    localStorage.removeItem('customDomain');
+                    showAlert('已清除自定义域名，使用部署域名', 'success');
+                }
+                
+                updateCurrentDomainDisplay();
+            });
+
+            document.getElementById('clearDomainBtn').addEventListener('click', function() {
+                document.getElementById('customDomain').value = '';
+                localStorage.removeItem('customDomain');
+                updateCurrentDomainDisplay();
+                showAlert('已清除自定义域名设置', 'success');
+            });
+
+            document.getElementById('useCurrentDomain').addEventListener('click', function() {
+                document.getElementById('customDomain').value = window.location.origin;
+            });
+
+            // 修改生成二维码函数的调用，使用有效域名
+            function generateQRCodeURL(path) {
+                return getEffectiveDomain() + '/' + path;
+            }
+
+            // 页面加载时初始化域名设置
+            function initializeDomainSettings() {
+                const savedDomain = localStorage.getItem('customDomain');
+                if (savedDomain) {
+                    document.getElementById('customDomain').value = savedDomain;
+                }
+                updateCurrentDomainDisplay();
+            }
+
+            // 在页面加载完成时初始化
+            initializeDomainSettings();
 
         });
     </script>
